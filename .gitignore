@@ -1,0 +1,8 @@
+# Ignore compiled Python files
+__pycache__/
+
+# Ignore experiment result folders
+experiment_*/
+
+# Ignore data folders
+data/
