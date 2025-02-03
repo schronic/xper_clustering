@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 from XPER.datasets.load_data import loan_status, boston, iris
 
 
@@ -60,6 +61,15 @@ def load_datasets():
     if os.path.exists(hourly_file):
         bike = pd.read_csv(hourly_file)
         datasets["Bike Sharing"] = (bike, "cnt")  # Adjust target column if needed
+
+
+    ### **5. Load credit_risk Dataset**
+    credit_risk_dir = os.path.join("data", "credit_risk")
+    credit_risk_file = os.path.join(credit_risk_dir, "dataproject2024.xlsx")
+
+    if os.path.exists(credit_risk_file):
+        credit_risk = pd.read_excel(credit_risk_file)
+        datasets["Credit Risk"] = (credit_risk, "Default (y)")
 
     return datasets
 
