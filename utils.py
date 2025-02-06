@@ -103,6 +103,7 @@ def weighted_aggregator(group):
        weighting by 'Cluster Size'. Also sum the 'Cluster Size' itself."""
     # Identify numeric columns
     numeric_cols = group.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols.remove("Cluster ID")
     
     # We'll remove 'Cluster Size' from the list so we can sum it separately
     if "Cluster Size" in numeric_cols:

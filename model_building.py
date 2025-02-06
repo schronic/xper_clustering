@@ -107,13 +107,11 @@ def preprocess_data(
     # Limit dataset size
     if df.shape[0] > sample_size:
         df = df.sample(n=sample_size, random_state=42)
-        # <-- Do NOT reset_index(drop=True) here so we keep original index in place
 
     # Select features and target
     X = df.drop(columns=[target_col]).iloc[:, :n_features]
     y = df[target_col]
 
-    # ------------------- NEW/CHANGED SECTION ---------------------------
     # Save the full dataset WITH index=True to preserve the original row index in the CSV
     dataset_dir = os.path.join(BASE_DIR, dataset_name.replace(" ", "_"))
     os.makedirs(dataset_dir, exist_ok=True)
@@ -126,7 +124,6 @@ def preprocess_data(
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=3
     )
-    # <-- DO NOT reset_index(drop=True). We want to keep the original index
 
     # Encode categorical features if any
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
@@ -340,7 +337,7 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
             logger.info(
                 f"{model_prefix.upper()} cluster {cluster_id} is purely class {unique_classes[0]}. Assigning perfect score."
             )
-            """
+            
             accuracy = accuracy_score(y_train_cluster_encoded, y_pred_binary)
             precision = precision_score(y_train_cluster_encoded, y_pred_binary, zero_division=0)
             recall = recall_score(y_train_cluster_encoded, y_pred_binary, zero_division=0)
@@ -366,13 +363,14 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
                 "Brier Score": brier,
                 "KS Statistic": ks_statistic,
                 "Cluster Size": len(cluster_indices),
-                "Train Time (s)": "Pure Cluster",
+                "Pure Cluster": True,
+                "Cluster ID": cluster_id
             }
 
 
             pure_clusters_dict[model_prefix][str(cluster_id)] = unique_classes[0]
             continue
-            """
+            
 
         # Label Encode if classification
         temp_label_encoder = None
@@ -447,6 +445,8 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
                 "KS Statistic": ks_statistic,
                 "Cluster Size": len(cluster_indices),
                 "Train Time (s)": train_time,
+                "Pure Cluster": False,
+                "Cluster ID": cluster_id
             }
 
         elif problem_type == "multiclass":
@@ -525,7 +525,7 @@ def evaluate_test_data_xper_clusters(
             else:
                 predicted_values, predicted_proba = y_pred_original, None
 
-        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification)
+        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification, cluster_id)
         test_metrics[cluster_id] = cluster_metrics
 
     return test_metrics
@@ -577,7 +577,7 @@ def evaluate_test_data_feature_clusters(
             else:
                 predicted_values, predicted_proba = y_pred_original, None
 
-        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification)
+        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification, cluster_id)
         test_metrics[cluster_id] = cluster_metrics
 
     return test_metrics
@@ -630,7 +630,7 @@ def evaluate_test_data_epsilon_clusters(
             else:
                 predicted_values, predicted_proba = y_pred_original, None
 
-        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification)
+        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification, cluster_id)
         test_metrics[cluster_id] = cluster_metrics
 
     return test_metrics
@@ -699,7 +699,7 @@ def _handle_pure_cluster(cluster_id, n_samples, model_prefix):
     return np.zeros(n_samples), np.zeros(n_samples)
 
 
-def _compute_test_metrics(y_true, y_pred, y_proba, classification):
+def _compute_test_metrics(y_true, y_pred, y_proba, classification, cluster_id):
     if classification:
         unique_labels = np.unique(y_true.values)
         if len(unique_labels) != 2:
@@ -709,6 +709,7 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
             auc_score = None
             accuracy = None
             fpr, fnr, tnr = None, None, None
+            pure_cluster = True #TODO: even if pure we should check for these metrics. 
             
         else:
             if y_proba is not None:
@@ -728,6 +729,8 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
             pos_proba = y_proba[y_true.values == 1]
             neg_proba = y_proba[y_true.values == 0]
             ks_statistic, _ = ks_2samp(pos_proba, neg_proba)
+
+            pure_cluster = False
 
         accuracy = accuracy_score(y_true.values, y_pred)
         logloss = log_loss(y_true.values, y_proba)
@@ -750,6 +753,8 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
                 "Brier Score": brier,
                 "KS Statistic": ks_statistic,
                 "Cluster Size": len(y_true),
+                "Pure Cluster": pure_cluster,
+                "Cluster ID": cluster_id
             }
     
     # Regression
@@ -794,7 +799,7 @@ def process_single_dataset(dataset_name: str, df: pd.DataFrame, target_col: str)
     )
     y_proba = baseline_model.predict_proba(X_test)[:, 1]
     y_pred = baseline_model.predict(X_test)
-    baseline_eval =  _compute_test_metrics(y_test, y_pred, y_proba, is_classification)
+    baseline_eval =  _compute_test_metrics(y_test, y_pred, y_proba, is_classification, cluster_id='Baseline')
 
     logger.info(f"Baseline {model_type} - Train: {baseline_score_train}, Test: {baseline_score_test}")
 
