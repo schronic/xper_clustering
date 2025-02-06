@@ -2,7 +2,10 @@
 __pycache__/
 
 # Ignore experiment result folders
-experiment_*/
+#experiment_*/
 
 # Ignore data folders
-data/
+#data/
+
+
+.venv/

@@ -9,6 +9,8 @@ from datetime import datetime
 from loguru import logger
 
 from sklearn.metrics import (
+    log_loss,
+    brier_score_loss,
     roc_auc_score,
     silhouette_score,
     mean_squared_error,
@@ -18,10 +20,14 @@ from sklearn.metrics import (
     f1_score,
     confusion_matrix
 )
+from scipy.stats import ks_2samp
+
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler, OrdinalEncoder
 
 from sklearn_extra.cluster import KMedoids
+from sklearn.cluster import KMeans
+
 
 # Custom imports from your local modules
 from XPER.compute.Performance import ModelPerformance
@@ -45,12 +51,12 @@ if "BASE_DIR" in os.environ:
 else:
     now = datetime.now()
     date_time = now.strftime("%d%m%Y%H%M%S")
-    BASE_DIR = f"experiment_results_{date_time}"
+    BASE_DIR = f"experiments/experiment_results_{date_time}"
     os.environ["BASE_DIR"] = BASE_DIR
 
 logger.info(f"Experiment base directory: {BASE_DIR}")
 
-from config import SAMPLE_SIZE, N_FEATURES, DATA_LIST, RESULTS_FILE
+from config import SAMPLE_SIZE, N_FEATURES, DATA_LIST, RESULTS_FILE, KERNEL_USE
 
 
 # ---------------------------------------------------
@@ -60,7 +66,7 @@ from config import SAMPLE_SIZE, N_FEATURES, DATA_LIST, RESULTS_FILE
 model_dir = None
 data_dir = None
 xper_dir = None
-pure_clusters_dict = {"xper": {}, "feature": {}}
+#pure_clusters_dict = {"xper": {}, "feature": {}, "epsilon": {}}
 
 
 # ---------------------------------------------------
@@ -74,7 +80,7 @@ def create_experiment_directories(folder_name: str) -> None:
     global model_dir, data_dir, xper_dir, pure_clusters_dict
     
     # Reset dictionary that keeps track of pure clusters
-    pure_clusters_dict = {"xper": {}, "feature": {}}
+    pure_clusters_dict = {"xper": {}, "feature": {}, "epsilon": {}}
 
     # Construct paths
     model_dir = os.path.join(BASE_DIR, folder_name, "models")
@@ -152,7 +158,7 @@ def compute_xper_values_and_cluster(
     """
     metric = "AUC" if classification else "R2"
     xper_instance = ModelPerformance(X.values, y.values, X.values, y.values, model, sample_size=X.shape[0])
-    phi_global, phi_per_instance = xper_instance.calculate_XPER_values([metric])
+    phi_global, phi_per_instance = xper_instance.calculate_XPER_values([metric], kernel=KERNEL_USE)
 
     # Save XPER values
     save_xper_results(X, phi_global, phi_per_instance)
@@ -160,7 +166,6 @@ def compute_xper_values_and_cluster(
     # Cluster by XPER
     cluster_labels, best_n_clusters, best_score, scaler = apply_kmedoids_clustering(X, phi_per_instance)
     return cluster_labels, best_n_clusters, best_score, scaler
-
 
 def save_xper_results(X: pd.DataFrame, phi_global_values: np.ndarray, phi_per_instance_values: np.ndarray) -> None:
     """
@@ -252,7 +257,6 @@ def cluster_data_by_features(X: pd.DataFrame, min_clusters: int = 2, max_cluster
 
     joblib.dump(best_kmedoid_model, os.path.join(model_dir, "best_feature_kmedoid.pkl"))
 
-    # ------------------- NEW/CHANGED SECTION ---------------------------
     # Store only Index + Cluster for the feature-based approach
     df_cluster_info = pd.DataFrame({
         "Index": X.index,
@@ -260,11 +264,50 @@ def cluster_data_by_features(X: pd.DataFrame, min_clusters: int = 2, max_cluster
     })
     csv_path = os.path.join(xper_dir, "train_feature_clusters.csv")
     df_cluster_info.to_csv(csv_path, index=False)
-    # -------------------------------------------------------------------
 
     logger.info(f"✅ Feature-based clustering saved to {csv_path}")
 
     return best_cluster_labels, best_n_clusters, best_score, scaler
+
+
+# ---------------------------------------------------
+#          Epsilon-Based Clustering
+# ---------------------------------------------------
+
+def cluster_data_by_error(
+    y_true: pd.Series, 
+    y_pred: pd.Series, 
+    n_clusters: int = 3,
+    random_state: int = 42
+) -> np.ndarray:
+
+    #TODO: Save data and models
+
+    errors = np.abs(y_true - y_pred)
+    errors = errors.reshape(-1) if hasattr(errors, "reshape") else np.array(errors)
+
+    cluster_model = KMeans(n_clusters=n_clusters, random_state=random_state)
+    labels = cluster_model.fit_predict(errors.reshape(-1, 1))
+
+    joblib.dump(cluster_model, os.path.join(model_dir, "best_epsilon_cluster.pkl"))
+
+    return labels
+
+def cluster_data_by_error_wrapper(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    model,   
+    n_clusters: int = 3,
+):
+    
+    y_pred = model.predict(X_train)
+    labels = cluster_data_by_error(
+        y_true=y_train, 
+        y_pred=y_pred, 
+        n_clusters=n_clusters, 
+    )
+
+    return labels
 
 
 # ---------------------------------------------------
@@ -297,20 +340,39 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
             logger.info(
                 f"{model_prefix.upper()} cluster {cluster_id} is purely class {unique_classes[0]}. Assigning perfect score."
             )
+            """
+            accuracy = accuracy_score(y_train_cluster_encoded, y_pred_binary)
+            precision = precision_score(y_train_cluster_encoded, y_pred_binary, zero_division=0)
+            recall = recall_score(y_train_cluster_encoded, y_pred_binary, zero_division=0)
+            f1 = f1_score(y_train_cluster_encoded, y_pred_binary, zero_division=0)
+
+            logloss = log_loss(y_train_cluster_encoded, y_proba)
+            brier = brier_score_loss(y_train_cluster_encoded, y_proba)
+            pos_proba = y_proba[y_train_cluster_encoded == 1]
+            neg_proba = y_proba[y_train_cluster_encoded == 0]
+            ks_statistic, _ = ks_2samp(pos_proba, neg_proba)
+
+
             cluster_metrics[cluster_id] = {
-                "AUC Score": 1.0,
-                "Accuracy": 1.0,
-                "Precision": 1.0,
-                "Recall (TPR)": 1.0,
-                "F1 Score": 1.0,
-                "False Positive Rate (FPR)": 0.0,
-                "False Negative Rate (FNR)": 0.0,
-                "True Negative Rate (TNR)": 1.0,
+                "AUC Score": None,
+                "Accuracy": None,
+                "Precision": None,
+                "Recall (TPR)": None,
+                "F1 Score": None,
+                "False Positive Rate (FPR)": None,
+                "False Negative Rate (FNR)": None,
+                "True Negative Rate (TNR)": None,
+                "Log Loss": logloss,
+                "Brier Score": brier,
+                "KS Statistic": ks_statistic,
                 "Cluster Size": len(cluster_indices),
                 "Train Time (s)": "Pure Cluster",
             }
+
+
             pure_clusters_dict[model_prefix][str(cluster_id)] = unique_classes[0]
             continue
+            """
 
         # Label Encode if classification
         temp_label_encoder = None
@@ -364,6 +426,13 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
             fnr = fn / (tp + fn) if (tp + fn) > 0 else 0
             tnr = tn / (tn + fp) if (tn + fp) > 0 else 0
 
+
+            logloss = log_loss(y_train_cluster_encoded, y_proba)
+            brier = brier_score_loss(y_train_cluster_encoded, y_proba)
+            pos_proba = y_proba[y_train_cluster_encoded == 1]
+            neg_proba = y_proba[y_train_cluster_encoded == 0]
+            ks_statistic, _ = ks_2samp(pos_proba, neg_proba)
+
             cluster_metrics[cluster_id] = {
                 "AUC Score": auc_score,
                 "Accuracy": accuracy,
@@ -373,9 +442,13 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
                 "False Positive Rate (FPR)": fpr,
                 "False Negative Rate (FNR)": fnr,
                 "True Negative Rate (TNR)": tnr,
+                "Log Loss": logloss,
+                "Brier Score": brier,
+                "KS Statistic": ks_statistic,
                 "Cluster Size": len(cluster_indices),
                 "Train Time (s)": train_time,
             }
+
         elif problem_type == "multiclass":
             accuracy = accuracy_score(y_train_cluster_encoded, y_pred_encoded)
             cluster_metrics[cluster_id] = {
@@ -396,7 +469,7 @@ def train_and_evaluate_cluster_models(X_train, y_train, target_col, cluster_labe
 
 
 # ---------------------------------------------------
-#      Test-Time Evaluation on XPER Clusters
+#      Test-Time Evaluation on Clusters
 # ---------------------------------------------------
 
 def evaluate_test_data_xper_clusters(
@@ -457,7 +530,6 @@ def evaluate_test_data_xper_clusters(
 
     return test_metrics
 
-
 def evaluate_test_data_feature_clusters(
     X_test, y_test, classification, feature_scaler, label_encoders
 ):
@@ -480,6 +552,59 @@ def evaluate_test_data_feature_clusters(
     feature_cluster_path = os.path.join(xper_dir, "test_feature_clusters.csv")
     X_test_local.to_csv(feature_cluster_path, index=False)
     logger.info(f"✅ Feature clustering saved to {feature_cluster_path}")
+
+    test_metrics = {}
+    for cluster_id in np.unique(test_cluster_labels):
+        cluster_indices = X_test_local[X_test_local["Cluster"] == cluster_id].index
+        X_test_cluster = X_test_local.loc[cluster_indices].drop(columns=["Cluster", "Index"])
+        y_test_cluster = y_test.loc[cluster_indices]
+
+        model_key = f"feature_cluster_{cluster_id}"
+        cluster_model = models.get(model_key)
+        if cluster_model is None:
+            predicted_values, predicted_proba = _handle_pure_cluster(cluster_id, X_test_cluster.shape[0], "feature")
+        else:
+            y_pred_encoded = cluster_model.predict(X_test_cluster)
+            if cluster_id in label_encoders:
+                le = label_encoders[cluster_id]
+                y_pred_original = le.inverse_transform(y_pred_encoded)
+            else:
+                y_pred_original = y_pred_encoded
+
+            if classification:
+                y_pred_proba = cluster_model.predict_proba(X_test_cluster)[:, 1]
+                predicted_values, predicted_proba = y_pred_original, y_pred_proba
+            else:
+                predicted_values, predicted_proba = y_pred_original, None
+
+        cluster_metrics = _compute_test_metrics(y_test_cluster, predicted_values, predicted_proba, classification)
+        test_metrics[cluster_id] = cluster_metrics
+
+    return test_metrics
+
+def evaluate_test_data_epsilon_clusters(
+    X_test, y_test, classification, label_encoders, baseline_model
+):
+    
+    models = _load_all_models_in_directory(model_dir)
+    best_epsilon_model = models.get("best_epsilon_cluster")
+    if best_epsilon_model is None:
+        logger.error("best_feature_kmedoid not found. Cannot cluster test data by errors.")
+        return {}
+    
+    y_pred = baseline_model.predict(X_test)
+    
+    errors = np.abs(y_test - y_pred)
+    errors = errors.reshape(-1) if hasattr(errors, "reshape") else np.array(errors)
+    test_cluster_labels = best_epsilon_model.predict(errors.reshape(-1, 1)).astype(int).ravel()
+
+    X_test_local = X_test.copy()
+    X_test_local["Cluster"] = test_cluster_labels
+    X_test_local["Index"] = X_test.index
+
+    feature_cluster_path = os.path.join(xper_dir, "test_epsilon_clusters.csv")
+    X_test_local.to_csv(feature_cluster_path, index=False)
+    logger.info(f"✅ Error clustering saved to {feature_cluster_path}")
 
     test_metrics = {}
     for cluster_id in np.unique(test_cluster_labels):
@@ -582,8 +707,9 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
                 f"Single unique class in test cluster: {unique_labels}. Cannot compute AUC. Setting AUC=None."
             )
             auc_score = None
-            accuracy = 1.0 if np.all(y_true.values == y_pred) else None
-            fpr, fnr, tnr = "NA", "NA", "NA"
+            accuracy = None
+            fpr, fnr, tnr = None, None, None
+            
         else:
             if y_proba is not None:
                 auc_score = roc_auc_score(y_true.values, y_proba)
@@ -598,25 +724,33 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
             else:
                 tn = fp = fn = tp = None
                 fpr = fnr = tnr = None
-            accuracy = accuracy_score(y_true.values, y_pred)
+
+            pos_proba = y_proba[y_true.values == 1]
+            neg_proba = y_proba[y_true.values == 0]
+            ks_statistic, _ = ks_2samp(pos_proba, neg_proba)
+
+        accuracy = accuracy_score(y_true.values, y_pred)
+        logloss = log_loss(y_true.values, y_proba)
+        brier = brier_score_loss(y_true.values, y_proba)
 
         precision = precision_score(y_true.values, y_pred, zero_division=0)
         recall = recall_score(y_true.values, y_pred, zero_division=0)
         f1 = f1_score(y_true.values, y_pred, zero_division=0)
 
         return {
-            "AUC Score": auc_score,
-            "Accuracy": accuracy,
-            "Precision": precision,
-            "Recall (TPR)": recall,
-            "F1 Score": f1,
-            "False Positive Rate (FPR)": fpr,
-            "False Negative Rate (FNR)": fnr,
-            "True Negative Rate (TNR)": tnr,
-            "Cluster Size": len(y_true),
-        }
-    
-        
+                "AUC Score": auc_score,
+                "Accuracy": accuracy,
+                "Precision": precision,
+                "Recall (TPR)": recall,
+                "F1 Score": f1,
+                "False Positive Rate (FPR)": fpr,
+                "False Negative Rate (FNR)": fnr,
+                "True Negative Rate (TNR)": tnr,
+                "Log Loss": logloss,
+                "Brier Score": brier,
+                "KS Statistic": ks_statistic,
+                "Cluster Size": len(y_true),
+            }
     
     # Regression
     mse = mean_squared_error(y_true.values, y_pred)
@@ -625,6 +759,7 @@ def _compute_test_metrics(y_true, y_pred, y_proba, classification):
         "RMSE": np.sqrt(mse),
         "Cluster Size": len(y_true),
     }
+
 
 
 # ---------------------------------------------------
@@ -673,6 +808,14 @@ def process_single_dataset(dataset_name: str, df: pd.DataFrame, target_col: str)
         X_train
     )
 
+    # Epsilon-based clustering
+    epsilon_cluster_labels = cluster_data_by_error_wrapper(
+        X_train,
+        y_train,
+        model = baseline_model,   
+        n_clusters = 5,
+    )
+
     # Train cluster models (XPER)
     xper_cluster_results, xper_label_encoders, _ = train_and_evaluate_cluster_models(
         X_train, y_train, target_col, xper_cluster_labels, model_type, "xper"
@@ -681,6 +824,10 @@ def process_single_dataset(dataset_name: str, df: pd.DataFrame, target_col: str)
     feature_cluster_results, feature_label_encoders, _ = train_and_evaluate_cluster_models(
         X_train, y_train, target_col, feature_cluster_labels, model_type, "feature"
     )
+    # Train cluster models (Epsilon)
+    epsilon_cluster_results, epsilon_label_encoders, _ = train_and_evaluate_cluster_models(
+        X_train, y_train, target_col, epsilon_cluster_labels, model_type, "epsilon"
+    )
 
     # Evaluate test data
     test_xper_cluster_results = evaluate_test_data_xper_clusters(
@@ -688,6 +835,10 @@ def process_single_dataset(dataset_name: str, df: pd.DataFrame, target_col: str)
     )
     test_feature_cluster_results = evaluate_test_data_feature_clusters(
         X_test, y_test, is_classification, feature_scaler, feature_label_encoders
+    )
+    # Evaluate test data
+    test_epsilson_cluster_results = evaluate_test_data_epsilon_clusters(
+        X_test, y_test, is_classification, epsilon_label_encoders, baseline_model
     )
 
     time_elapsed = round(time.time() - start_time, 2)
@@ -705,8 +856,10 @@ def process_single_dataset(dataset_name: str, df: pd.DataFrame, target_col: str)
         "Feature-Based Cluster Count": feature_best_n_clusters,
         "Feature-Based Silhouette Score": feature_best_score,
         "Train Feature Cluster Results": feature_cluster_results,
+        "Train Error Cluster Results": epsilon_cluster_results,
         "Test XPER Cluster Results": test_xper_cluster_results,
         "Test Feature Cluster Results": test_feature_cluster_results,
+        "Test Error Cluster Results": test_epsilson_cluster_results,
         "Computation Time (s)": time_elapsed,
     }
 
@@ -715,17 +868,19 @@ def run_experiments() -> pd.DataFrame:
     """
     Loads multiple datasets, processes each one, and saves results.
     """
-    all_datasets = load_datasets()
+    all_datasets = load_datasets(DATA_LIST)
     all_results = []
 
     os.makedirs(BASE_DIR, exist_ok=True)
     shutil.copy('config.py', BASE_DIR)
 
     for dataset_name, (df, target_col) in all_datasets.items():
-        folder_name = dataset_name.lower().replace(" ", "_")
-        create_experiment_directories(folder_name)
 
         if dataset_name in DATA_LIST:  # adjust if you want to run everything
+            
+            folder_name = dataset_name.lower().replace(" ", "_")
+            create_experiment_directories(folder_name)
+
             result_dict = process_single_dataset(dataset_name, df, target_col)
 
             results_path = os.path.join(BASE_DIR, folder_name, "final_results.csv")

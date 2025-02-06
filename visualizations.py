@@ -84,8 +84,6 @@ def plot_feature_distributions_grid(df_clusters, method, save_path):
         # Attempt numeric conversion
         try:
             df_clusters_clean[feature] = pd.to_numeric(df_clusters_clean[feature], errors='coerce')
-            logger.debug(feature)
-            logger.debug(df_clusters_clean[feature].isna().any())
             df_clusters_clean[feature].dropna(inplace=True)
             
         except:
@@ -96,7 +94,6 @@ def plot_feature_distributions_grid(df_clusters, method, save_path):
         if len(unique_values) < 5:
             # Categorical => Bar chart
             df_clusters_clean[feature] = df_clusters_clean[feature].astype(int)
-            logger.debug(feature, df_clusters_clean[feature].isna().any())
 
             category_counts = df_clusters_clean.groupby(["Cluster", feature]).size().reset_index(name="Count")
             total_counts = category_counts.groupby("Cluster")["Count"].transform("sum")
@@ -248,6 +245,8 @@ def plot_xper_distribution(df_xper_values, save_path):
     drop_cols = []
     if "Benchmark" in df_xper_values.columns:
         drop_cols.append("Benchmark")
+    if "Unnamed: 0" in df_xper_values.columns:
+        drop_cols.append("Unnamed: 0")
 
     sns.boxplot(data=df_xper_values.drop(columns=drop_cols), palette="Reds")
     plt.xticks(rotation=90)
@@ -388,7 +387,6 @@ def preprocess_clusters(df_clusters):
     for col in features:
         try:
             df_clusters[col] = pd.to_numeric(df_clusters[col])
-            logger.debug(col)
             numeric_cols.append(col)
         except:
             pass
@@ -550,8 +548,10 @@ def main(BASE_DIR, RESULTS_FILE, DATA_LIST):
         try:
             test_xper_scores = ast.literal_eval(df_results["Test XPER Cluster Results"].values[0])
             test_feature_scores = ast.literal_eval(df_results["Test Feature Cluster Results"].values[0])
+            test_epsilon_scores = ast.literal_eval(df_results["Test Error Cluster Results"].values[0])
             train_xper_scores = ast.literal_eval(df_results["Train XPER Cluster Results"].values[0])
             train_feature_scores = ast.literal_eval(df_results["Train Feature Cluster Results"].values[0])
+            train_epsilon_scores = ast.literal_eval(df_results["Train Error Cluster Results"].values[0])
             baseline_eval = ast.literal_eval(df_results["Baseline Model Full Test Eval"].values[0])
 
             df_test_xper_scores = pd.DataFrame.from_dict(test_xper_scores, orient='index')
@@ -560,19 +560,27 @@ def main(BASE_DIR, RESULTS_FILE, DATA_LIST):
             df_test_feature_scores = pd.DataFrame.from_dict(test_feature_scores, orient='index')
             df_test_feature_scores['Data'] = 'test_feature_scores'
 
+            df_test_epsilon_scores = pd.DataFrame.from_dict(test_epsilon_scores, orient='index')
+            df_test_epsilon_scores['Data'] = 'test_epsilon_scores'
+
             df_train_xper_scores = pd.DataFrame.from_dict(train_xper_scores, orient='index')
             df_train_xper_scores['Data'] = 'train_xper_scores'
 
             df_train_feature_scores = pd.DataFrame.from_dict(train_feature_scores, orient='index')
             df_train_feature_scores['Data'] = 'train_feature_scores'
 
+            df_train_epsilon_scores = pd.DataFrame.from_dict(train_epsilon_scores, orient='index')
+            df_train_epsilon_scores['Data'] = 'train_epsilon_scores'
+
             baseline_eval['Data'] = 'test_baseline_eval'
 
             df_eval = pd.concat([
                 df_train_xper_scores,
                 df_train_feature_scores,
+                df_train_epsilon_scores,
                 df_test_xper_scores,
                 df_test_feature_scores,
+                df_test_epsilon_scores
             ], ignore_index=True)
             logger.info("[INFO] Combined cluster-level metrics extracted.")
         except Exception as e:
@@ -590,8 +598,9 @@ def main(BASE_DIR, RESULTS_FILE, DATA_LIST):
         #    axis=None
         #)
 
+        drop_cols = ["False Positive Rate (FPR)", "False Negative Rate (FNR)", "True Negative Rate (TNR)", "Train Time (s)"]
         analysis_path = os.path.join(visualizations_path, "analysis_frame.xlsx")
-        pd.concat([df_eval, df_aggregates], axis=0).to_excel(analysis_path, index=False)
+        pd.concat([df_eval, df_aggregates], axis=0).drop(columns=drop_cols).to_excel(analysis_path, index=False)
         logger.info(f"✅ Analysis Data saved to {analysis_path}")
 
         # ----------------------------------------------------------------
