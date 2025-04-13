@@ -308,7 +308,7 @@ def plot_feature_distributions_grid(df_clusters, method, save_path):
         df_clean = df_clean.dropna(subset=[feature])
 
         unique_values = df_clean[feature].unique()
-        if len(unique_values) < 5:
+        if len(unique_values) <= 10:
             # Categorical => Bar chart
             df_clean[feature] = df_clean[feature].astype(int, errors='ignore')
             category_counts = df_clean.groupby(["Cluster", feature]).size().reset_index(name="Count")
@@ -598,9 +598,8 @@ def main(BASE_DIR, RESULTS_FILE, DATA_LIST):
         #    axis=None
         #)
 
-        drop_cols = ["False Positive Rate (FPR)", "False Negative Rate (FNR)", "True Negative Rate (TNR)", "Train Time (s)"]
         analysis_path = os.path.join(visualizations_path, "analysis_frame.xlsx")
-        pd.concat([df_eval, df_aggregates], axis=0).drop(columns=drop_cols).to_excel(analysis_path, index=False)
+        pd.concat([df_eval, df_aggregates], axis=0).to_excel(analysis_path, index=False)
         logger.info(f"✅ Analysis Data saved to {analysis_path}")
 
         # ----------------------------------------------------------------

@@ -1,42 +1,36 @@
 
 # XPER Clustering Experiments
 
-This repository provides a complete pipeline for running **XPER-based** and **feature-based** clustering on various datasets, along with subsequent **visualization** and **analysis** of the results. It uses Python **3.12**, `sklearn_extra`, `plotly`, and several other libraries listed in [`requirements.txt`](#requirements).
+This repository provides a modular and reproducible pipeline for **XPER-based clustering** and **feature-based clustering**, tailored to machine learning applications on heterogeneous datasets. It supports **performance decomposition**, **cluster-specific modeling**, and **comprehensive visual and statistical analysis** of results.
 
-Below is an overview of how to get started, the main entry points, and how the code is structured.
+The code is written in **Python 3.12** and leverages key libraries such as `scikit-learn`, `sklearn-extra`, `xgboost`, `plotly`, and `pandas`. A complete list of dependencies is provided in [`requirements.txt`](#1-requirements).
 
 ---
 
-## Table of Contents
+## 📌 Table of Contents
 
 - [1. Requirements](#1-requirements)
 - [2. Getting Started](#2-getting-started)
-- [3. Project Structure](#3-project-structure)
-  - [3.1. `model_building.py`](#31-model_buildingpy)
-  - [3.2. `visualizations.py`](#32-visualizationspy)
-  - [3.3. `config.py`](#33-configpy)
-  - [3.4. `load_data.py` and `utils.py`](#34-load_datapy-and-utilspy)
-  - [3.5. Experiments Directory](#35-experiments-directory)
-- [4. Usage](#4-usage)
-  - [4.1. Running an Experiment](#41-running-an-experiment)
-  - [4.2. Visualizing Results](#42-visualizing-results)
-- [5. Acknowledgements and Further Information](#5-acknowledgements-and-further-information)
+- [3. Repository Structure](#3-repository-structure)
+- [4. Main Scripts Overview](#4-main-scripts-overview)
+- [5. Output & Experiment Logs](#5-output--experiment-logs)
+- [6. Further Analysis](#6-further-analysis)
 
 ---
 
 ## 1. Requirements
 
-- **Python 3.12** (ensure your environment is up to date)
+- **Python 3.12**
 - All dependencies listed in `requirements.txt`
 
-### Installing Requirements
+### Installation
 
 ```bash
-# Create a fresh virtual environment (optional but recommended)
+# Optionally create a new virtual environment
 python3.12 -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+source venv/bin/activate     # On Windows: venv\Scripts\activate
 
-# Install all required libraries
+# Install required packages
 pip install -r requirements.txt
 ```
 
@@ -44,157 +38,135 @@ pip install -r requirements.txt
 
 ## 2. Getting Started
 
-1. **Clone this repository** (or download the source).  
-2. Make sure your Python environment is **3.12** with all dependencies installed.  
-3. From the repository **root** directory, you can run the **main experiment pipeline**:
+Follow these steps to replicate or extend the core experiments:
+
+1. **Clone this repository**:
+   ```bash
+   git clone https://github.com/yourusername/xper-clustering.git
+   cd xper-clustering
+   ```
+
+2. **Edit `config.py`** to set your experiment parameters:
+   - `SAMPLE_SIZE` – number of rows sampled
+   - `N_FEATURES` – number of features used
+   - `KERNEL_USE` – toggle kernel approximation
+   - Currently, only the **credit risk dataset** is supported.
+
+3. **Run the main experiment pipeline**:
    ```bash
    python model_building.py
    ```
-   This executes the **model training**, **XPER computations**, **cluster assignments**, and **results** generation.  
-4. After the models finish, **visualizations** are automatically generated and saved in the same run.  
+
+4. **Visualizations** will be generated automatically and saved within a timestamped `experiments/` directory.
+
+5. To perform cluster-specific modeling and evaluation, execute:
+   ```bash
+   python model_building_cluster.py
+   ```
+
+6. To aggregate and compare results across runs, open:
+   - `additional_analysis/aggregate_experiment_analysis.ipynb`
+
+   This notebook creates:
+   - `combined_analysis_frames.xlsx`
+   - `test_combined_analysis_frames.xlsx`
+   - `train_combined_analysis_frames.xlsx`
 
 ---
 
-## 3. Project Structure
+## 3. Repository Structure
 
-Below is a brief description of the key files:
-
-```
+```bash
 .
-├── config.py
-├── load_data.py
-├── model_building.py
-├── requirements.txt
-├── utils.py
-├── visualizations.py
-├── data/
-|   └── ...
-└── experiments/
-    └── experiment_results_YYYYMMDDHHMMSS
-    └── ...
+├── additional_analysis/               # Advanced EDA and diagnostics
+│   ├── baseline_analysis/             # Baseline model comparisons
+│   ├── aggregate_experiment_analysis.ipynb
+│   ├── eda_script.ipynb
+│   ├── feature_vs_xper_outliers.ipynb
+│   ├── features_distribution_by_default_class.ipynb
+│   ├── heterogeneity.ipynb
+│   └── train_test_distribution_consistency.ipynb
+│
+├── data/                              # (Optional) Raw and preprocessed data
+├── experiments/                       # Auto-generated logs and results
+├── XPER/                              # XPER logic and utils
+│
+├── config.py                          # Experiment configurations
+├── load_data.py                       # Dataset loader
+├── utils.py                           # Utility functions (e.g., model evaluator)
+├── model_building.py                  # Global model pipeline
+├── model_building_cluster.py         # Cluster-specific modeling pipeline
+├── cluster_analysis.py                # Additional analysis on clustering results
+├── visualizations.py                  # Global-level visualizations
+├── visualizations_cluster.py          # Cluster-level visualizations
+├── requirements.txt                   # Python dependencies
+└── README.md                          # Project overview (you’re here!)
 ```
 
-### 3.1. `model_building.py`
+---
 
-- **Entry Point** for the entire experiment pipeline.  
-- Reads datasets via `load_data.py` and processes them:
-  - Splits data into train/test.
-  - Trains a baseline model (e.g., XGBoost).
-  - Computes **XPER** values for train/test sets.
-  - Performs both **XPER-based** and **feature-based** **K-Medoids** clustering.
-  - Trains cluster-specific models.
-  - Evaluates performance on test data.
+## 4. Main Scripts Overview
 
-- Produces:
-  - **Models** saved to `<experiment_folder>/<dataset_name>/models/`
-  - **Data** splits saved to `<experiment_folder>/<dataset_name>/data/`
-  - **XPER** values/clusters saved to `<experiment_folder>/<dataset_name>/xper_values/`
-  - A final CSV of results in `<experiment_folder>/<dataset_name>/final_results.csv`
-  - A consolidated `overall_results.csv` at the root of `<experiment_folder>/`
+### `model_building.py`
 
-### 3.2. `visualizations.py`
+- Core entry point for:
+  - Data preprocessing and train/test splits
+  - Model training (e.g., XGBoost)
+  - XPER value computation (per-instance and global)
+  - Feature-based and XPER-based K-Medoids clustering
+  - Cluster assignment exports
+  - Results aggregation and logging
 
-- Reads in the **cluster assignments** (train/test, XPER-based, feature-based) and merges them with the original dataset.  
-- Generates:
-  - **Boxplots** of XPER distributions.
-  - **Feature distribution plots** for each cluster.
-  - **PCA** scatter plots in 2D with color-coded clusters.
-- Saves all plots in a `visualizations/` folder under each dataset’s experiment folder.
+### `model_building_cluster.py`
 
-### 3.3. `config.py`
+- Performs cluster-specific training and evaluation
+- Outputs performance comparisons across clusters
+- Stores results in a new subdirectory under `experiments/`
 
-- Holds **experiment parameters** such as:
-  - `SAMPLE_SIZE` – how many rows to sample per dataset (e.g., 500).
-  - `N_FEATURES` – how many features to use from each dataset.
-  - `DATA_LIST` – which datasets to run experiments on.
-  - `RESULTS_FILE` – path to the final/overall results file (default: `overall_results.csv`).
-- You can modify these parameters to control which datasets to process and how the experiments are conducted.
+### `config.py`
 
-### 3.4. `load_data.py` and `utils.py`
-
-- **`load_data.py`**  
-  - Should define a function `load_datasets()` that returns a dictionary of `(dataset_name, (df, target_col))`.
-  - This is where you integrate your custom data sources.
-
-- **`utils.py`**  
-  - Contains helper functions like `evaluate_model`, `initiate_model`, `identify_problem_type`, etc.
-  - Streamlines repetitive tasks (e.g., classification/regression detection, scoring).
-
-### 3.5. Experiments Directory
-
-- **`experiment_results_YYYYMMDDHHMMSS/`** (auto-generated)  
-  - Each run of `model_building.py` creates a unique time-stamped folder to store all results.
-  - Subfolders for each dataset: 
-    - `models/`  
-    - `data/`  
-    - `xper_values/`  
-    - `visualizations/` (once the pipeline finishes and `visualizations.py` runs)
-
-Inside those subfolders, you’ll find:
-
-- **`full_dataset.csv`**: The entire dataset with the original row index.  
-- **`train_xper_clusters.csv`** / **`test_xper_clusters.csv`**: Minimal cluster assignments (`Index`, `Cluster`) from XPER-based approach.  
-- **`train_feature_clusters.csv`** / **`test_feature_clusters.csv`**: Minimal cluster assignments from feature-based approach.  
-- **`train_per_instance_xper.csv`** / **`test_per_instance_xper.csv`**: Detailed per-instance XPER values.  
-- **`train_global_xper.csv`** / **`test_global_xper.csv`**: Global XPER values across features.  
-- **`final_results.csv`**: Summarizes all metrics for that dataset, including baseline scores, silhouette scores, etc.
+- Central configuration hub:
+  - Feature selection
+  - Sample size
+  - Experiment toggles
+  - Dataset path or selection (single dataset currently supported)
 
 ---
 
-## 4. Usage
+## 5. Output & Experiment Logs
 
-### 4.1. Running an Experiment
+Each run creates a unique timestamped folder under `experiments/`, structured as follows:
 
-1. **Edit `config.py`** to select which datasets to run. For example:
-   ```python
-   DATA_LIST = ["Bank Marketing", "Iris", "Some Other Dataset"]
-   SAMPLE_SIZE = 500
-   N_FEATURES = 6
-   ...
-   ```
-2. **Launch** the experiment pipeline:
-   ```bash
-   python model_building.py
-   ```
-3. The pipeline will load each dataset from `load_data.py`, build models, generate XPER values, cluster them, and finally run `visualizations.main(...)` to produce plots.
+```
+experiments/experiment_YYYYMMDD_HHMMSS/
+│
+├── models/                      # Trained global or cluster models
+├── data/                        # Train/test splits with metadata
+├── xper_values/                 # Per-instance and global XPER values
+├── visualizations/              # Cluster-specific and global plots
+├── final_results.csv            # Metrics summary for this dataset
+└── overall_results.csv          # Aggregated run-level metrics
+```
 
-4. Results appear under a newly created folder, e.g., `experiment_results_31012025195154/`.
-
-### 4.2. Visualizing Results
-
-- The code **automatically** calls `visualizations.main(...)` at the end of each run.  
-- The generated images:
-  - **XPER distribution**: Boxplot(s) in `visualizations/xper_distribution.png`.
-  - **Feature distributions**: `feature_distributions_<method>.png`.
-  - **PCA** scatter: `pca_<method>.png`.
-
-You’ll also see logs indicating where each plot was saved.
+Output files include:
+- `train_xper_clusters.csv` / `test_xper_clusters.csv`
+- `train_feature_clusters.csv` / `test_feature_clusters.csv`
+- `train_per_instance_xper.csv` / `train_global_xper.csv`
+- `train_test_distribution_stats.csv`
+- `silhouette_scores.csv` (if clustering quality evaluation is enabled)
 
 ---
 
-## 5. Acknowledgements and Further Information
+## 6. Further Analysis
 
-- **XPER**: We leverage `XPER.compute.Performance` from a custom library to compute explanatory feature contributions.  
-- **Clustering**: We use **K-Medoids** from [`sklearn_extra`](https://github.com/scikit-learn-contrib/scikit-learn-extra).  
-- **Plotting**: Primarily done with `seaborn`, `matplotlib`, and `plotly`.  
-- **Modeling**: `XGBoost` or other scikit-learn models (through the `initiate_model` in `utils.py`).
+The `additional_analysis/` folder provides notebooks to analyze key phenomena such as:
 
-If you have questions or need further clarification, feel free to open an issue or reach out. Happy experimenting!
+- Distribution shifts between train and test sets
+- Feature contributions vs. class labels
+- Global vs. local attribution analysis
+- Heterogeneity validation via statistical tests
 
----
-
-## ToDo and Progress:
-
-2. Benchmark to other papers approach
-3. assess statificial significance of findings
-4. Try finetuning all models but specifically benchmark model before
-5. Data preprocessing (?)
-6. Different Clustering Approaches
-7. Different Models
-8. Use more coalition values
-9. If clusters are clean I have to fix the metrics
-10. PCA Plots
-
-- DONE (KMEANS) benchmark against epsilon (the errors i make). if i have one size fits all model. plot distribution of errors. split in 2-3 groups and cluster based on those 
-- DONE work with probabilities not binary classification (no need for weighting)
-- DONE play with true xper and kernel 
+Use these notebooks to:
+- Interpret clustering quality
+- Validate feature relevance
+- Compare raw feature-based vs. XPER-based subgrouping

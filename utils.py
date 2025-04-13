@@ -1,9 +1,11 @@
 
 from sklearn.metrics import roc_auc_score, r2_score
-from xgboost import XGBClassifier, XGBRegressor
+import xgboost as xgb
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import RandomizedSearchCV
+
 
 def evaluate_model(model, X_train, X_test, y_train, y_test, model_type):
     """Evaluate model performance based on problem type."""
@@ -14,15 +16,78 @@ def evaluate_model(model, X_train, X_test, y_train, y_test, model_type):
     elif model_type == 'regression':
         return r2_score(y_train, model.predict(X_train)), r2_score(y_test, model.predict(X_test))
 
-def initiate_model(model_type: str, num_classes: int = None):
-    """Initialize an XGBoost model based on the problem type."""
-    if model_type == "binary":
-        return XGBClassifier(eval_metric="error", use_label_encoder=False)
-    elif model_type == "regression":
-        return XGBRegressor()
-    elif model_type == "multiclass":
-        return XGBClassifier(objective="multi:softmax", num_class=num_classes)
+
+def initiate_model(model_type: str, num_classes: int = None, X_train=None, y_train=None):
+    """
+    Initialize an XGBoost model for overfitting prevention and tune it using RandomizedSearchCV.
     
+    This function always performs random search tuning on the training data provided.
+    It supports:
+       - "regression": using XGBRegressor
+       - "binary": using XGBClassifier with objective "binary:logistic"
+       - "multiclass": using XGBClassifier with objective "multi:softprob"
+    
+    Args:
+        model_type (str): "regression", "binary", or "multiclass".
+        num_classes (int, optional): Number of classes (required for multiclass).
+        X_train (array-like): Training features.
+        y_train (array-like): Training target.
+    
+    Returns:
+        model: The tuned model (best estimator from random search).
+    """
+    if X_train is None or y_train is None:
+        raise ValueError("X_train and y_train must be provided for random search tuning.")
+    
+    # Define base parameters and parameter distributions for tuning.
+    if model_type == "regression":
+        base_params = {"objective": "reg:squarederror", "seed": 42, "n_estimators": 100}
+        ModelClass = xgb.XGBRegressor
+        scoring = "neg_mean_squared_error"
+    elif model_type == "binary":
+        base_params = {"objective": "binary:logistic", "seed": 42, "n_estimators": 100}
+        ModelClass = xgb.XGBClassifier
+        scoring = "roc_auc"
+    elif model_type == "multiclass":
+        if num_classes is None:
+            raise ValueError("num_classes must be provided for multiclass classification.")
+        base_params = {"objective": "multi:softprob", "num_class": num_classes, "seed": 42, "n_estimators": 100}
+        ModelClass = xgb.XGBClassifier
+        scoring = "roc_auc_ovr"
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+    # Common parameter distributions.
+    param_distributions = {
+        "max_depth": [4, 6, 8],
+        "learning_rate": [0.01, 0.05, 0.1, 0.2],
+        "subsample": [0.8, 0.9, 1.0],
+        "colsample_bytree": [0.8, 0.9, 1.0],
+        "alpha": [0, 0.5, 1],
+        "lambda": [0, 0.5, 1]
+    }
+
+    # Initialize the model with base parameters.
+    model = ModelClass(**base_params)
+    
+    # Set up RandomizedSearchCV.
+    random_search = RandomizedSearchCV(
+        model,
+        param_distributions,
+        n_iter=20,
+        scoring=scoring,
+        cv=3,
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    random_search.fit(X_train, y_train)
+    
+    best_model = random_search.best_estimator_
+    
+    return best_model
+
+
 
 def identify_problem_type(dataset_name: str, y_train: pd.Series, y_test: pd.Series, target_col: str, label_encoder: LabelEncoder):
     """Determine if the dataset is for classification (binary/multiclass) or regression."""
@@ -42,7 +107,7 @@ def identify_problem_type(dataset_name: str, y_train: pd.Series, y_test: pd.Seri
         y_train = pd.DataFrame(label_encoder.fit_transform(y_train), columns=[target_col])
         y_test = pd.DataFrame(label_encoder.transform(y_test), columns=[target_col])
     
-    return model_type, classification, num_classes
+    return model_type, num_classes #TODO: completely rip out the classification tab
 
 
 def highlight_best_train_test(df):
