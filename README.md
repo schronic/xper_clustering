@@ -155,7 +155,7 @@ Output files include:
 - `train_test_distribution_stats.csv`
 - `silhouette_scores.csv` (if clustering quality evaluation is enabled)
 
-As the experiment folder is to big for me to push it to GitHub, I have opted to upload it to my Google Drive. Hence all results related to my thesis can be found [here](https://drive.google.com/drive/folders/1J2OVdf9u5IGflaEboVDVmuo8t2ZrRla5?usp=sharing)
+As the experiment folder is to big for me to push it to GitHub, I have opted to upload it to my Google Drive. Hence all results related to my thesis can be found [here](https://drive.google.com/drive/folders/1kPobSBmtKVLTsMx6glIjV_CHd4ns2Z1F?usp=sharing)
 
 ---
 
