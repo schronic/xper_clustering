@@ -1,6 +1,4 @@
 \.venv
-\catboost_info
-\Other
 \experiments
 \__pycache__
 .DS_Store
